@@ -1,0 +1,405 @@
+---
+title: "Conjunction of Jupiter and Saturn in December 2020"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+# Taken from https://paulsite.com/calculation_of_right_ascension_and_declination/
+library(highcharter)
+library(readxl)
+library(data.table)
+
+
+# Planet elements
+Osculating_Elements_AUG_16_2013 <- read_excel("Osculating_Elements_AUG_16_2013.xlsx")
+#View(Osculating_Elements_AUG_16_2013)
+
+
+# location
+locale_lon <- -82.695457
+locale_lat <- 28.364189
+
+
+# Equinox and mean ecliptic of J2000.0
+JD <- 2450680.5
+
+# Obliquity of the ecliptic at J2000.0
+ec <- 23.439292
+ec_radians <- ec * (pi/180)
+
+
+# Julian Date for the elements
+# Days to beginning of month
+
+# Month   Normal year    Leap year
+# Jan         0             0
+# Feb        31            31
+# Mar        59            60
+# Apr        90            91
+# May       120           121
+# Jun       151           152
+# Jul       181           182
+# Aug       212           213
+# Sep       243           244
+# Oct       273           274
+# Nov       304           305
+# Dec       334           335
+
+# Days since J2000 to beginning of each year
+ 
+#                 Days
+#       1999     -366.5
+#       2000       -1.5
+#       2001      364.5
+#       2002      729.5
+#       2003     1094.5
+#       2004     1459.5
+#       2005     1825.5
+# Similarly,
+#       2013     4747.5
+#       2016     5842.5
+
+# Day number for elements (16th August 2013)
+dele <- 212 + 16 + 4747.5
+
+# Day number for date we care about (1st March 2016)
+dpos <- 31 + 1 + 5842.5
+
+# Number of days after the date of the elements
+d <- dpos - dele
+
+# Date of planetary constants "2000-01-01 12:00:00 UTC"
+dele <- as.POSIXct("2013-08-16 12:00:00", tz="UTC")
+
+#Date of observation
+# 2012-12-20 15:05:00
+dpos <- as.POSIXct("2020-12-20 23:00:00", tz="UTC")
+
+d <- as.numeric(difftime(dpos, dele, units="days"))
+```
+
+## Get Planet Orbital Elements
+```{r}
+Planet_Eph <- function(planetName) {
+  PlanetEphData <- Osculating_Elements_AUG_16_2013 %>%
+    dplyr::filter(name_planet == planetName)
+  
+  return(PlanetEphData)
+}
+```
+
+## Mean Anomaly
+```{r}
+        # M = n * d + L - p 
+        # 
+        # n is daily motion
+        # d is the number of days since the date of the elements
+        # L is the mean longitude
+        # p is the longitude of perihelion 
+        # 
+        # M should be in range 0 to 360 degrees, add or subtract
+        #   multiples of 360 to bring M into this range.
+
+MeanAnomaly_planet <- function(planetName) {
+  PlanetEphData <- Planet_Eph(planetName)
+  
+  x <- PlanetEphData$n_planet * d + PlanetEphData$L_planet - PlanetEphData$p_planet
+  
+  return(x)
+}
+```
+
+## True Anomaly
+```{r}
+TrueAnomaly_planet <- function(planetName) {
+  PlanetEphData <- Planet_Eph(planetName)
+  
+  MAp_Rad <- MeanAnomaly_planet(planetName) * (pi/180)
+  e <- PlanetEphData$e_planet
+  
+  x <- MAp_Rad + (2 * e - 0.25 * e^3 + 5/96 * e^5) * sin(MAp_Rad) +
+     (1.25 * e^2 - 11/24 * e^4) * sin(2*MAp_Rad) + 
+    (13/12 * e^3 - 43/64 * e^5) * sin(3*MAp_Rad) + 
+    103/96 * e^4 * sin(4*MAp_Rad) + 1097/960 * e^5 * sin(5*MAp_Rad)
+  
+  return(x) 
+}
+```
+
+## Radius Vector
+```{r}
+RadiusVector_planet <- function(planetName) {
+  PlanetEphData <- Planet_Eph(planetName)
+  
+  a <- PlanetEphData$a_planet
+  e <- PlanetEphData$e_planet
+  v <- TrueAnomaly_planet(planetName)
+
+  x <- a * (1 - e^2) / (1 + e * cos(v))
+  
+  return(x) 
+}
+```
+
+## Heliocentric coordinates of Planet
+```{r}
+HelioCoords_planet <- function(planetName) {
+  PlanetEphData <- Planet_Eph(planetName)
+  
+  i <- PlanetEphData$i_planet * (pi/180)
+  o <- PlanetEphData$o_planet * (pi/180)
+  p <- PlanetEphData$p_planet * (pi/180)
+  r <- RadiusVector_planet(planetName)
+  v <- TrueAnomaly_planet(planetName)
+
+  Xp <- r * (cos(o) * cos(v + p - o) - sin(o) * sin(v + p - o) * cos(i))
+  Yp <- r * (sin(o) * cos(v + p - o) + cos(o) * sin(v + p - o) * cos(i))
+  Zp <- r * (sin(v + p - o) * sin(i))
+  
+  vec <- c(Xp, Yp, Zp)
+  return(vec) 
+}
+```
+
+## Heliocentric coordinates of Earth
+```{r}
+HelioCoords_Earth <- function() {
+  PlanetEphData <- Planet_Eph("Earth")
+
+  p <- PlanetEphData$p_planet * (pi/180)
+  r <- RadiusVector_planet("Earth")
+  v <- TrueAnomaly_planet("Earth")
+
+  Xp <- r * cos(v + p)
+  Yp <- r * sin(v + p)
+  Zp <- 0
+  
+  vec <- c(Xp, Yp, Zp)
+  return(vec) 
+}
+```
+
+## Geocentric ecliptic coordinates of the planet
+```{r}
+GeoEclipticCoords_Planet <- function(planetName) {
+  PlanetEphData <- Planet_Eph(planetName)
+  
+  i <- PlanetEphData$i_planet * (pi/180)
+  o <- PlanetEphData$o_planet * (pi/180)
+  p <- PlanetEphData$p_planet * (pi/180)
+  r <- RadiusVector_planet(planetName)
+  v <- TrueAnomaly_planet(planetName)
+
+  Xp <- r * (cos(o) * cos(v + p - o) - sin(o) * sin(v + p - o) * cos(i))
+  Yp <- r * (sin(o) * cos(v + p - o) + cos(o) * sin(v + p - o) * cos(i))
+  Zp <- r * (sin(v + p - o) * sin(i))
+  
+  PlanetEphDataEarth <- Planet_Eph("Earth")
+
+  pe <- PlanetEphDataEarth$p_planet * (pi/180)
+  re <- RadiusVector_planet("Earth")
+  ve <- TrueAnomaly_planet("Earth")
+
+  Xe <- re * cos(ve + pe)
+  Ye <- re * sin(ve + pe)
+  Ze <- 0
+  
+  Xgeo <- Xp - Xe
+  Ygeo <- Yp - Ye
+  Zgeo <- Zp - Ze
+  
+  vec <- c(Xgeo, Ygeo, Zgeo)
+  return(vec)
+}
+```
+
+## Geocentric equatorial coordinates of the planet
+```{r}
+GeoEquitorialCoords_Planet <- function(planetName) {
+  vecGeo <- GeoEclipticCoords_Planet(planetName)
+  
+  Xq <- vecGeo[1]
+  Yq <- vecGeo[2] * cos(ec_radians) - vecGeo[3] * sin(ec_radians)
+  Zq <- vecGeo[2] * sin(ec_radians) + vecGeo[3] * cos(ec_radians)
+  
+  vec <- c(Xq, Yq, Zq)
+  return(vec)
+}
+```
+
+## Right Ascension and Declination
+```{r}
+RA_DEC_Planet <- function(planetName) {
+  vecGeo <- GeoEquitorialCoords_Planet(planetName)
+  Xq <- vecGeo[1]
+  Yq <- vecGeo[2]
+  Zq <- vecGeo[3]
+  
+  Xq_rad <- Xq * (pi/180)
+  Yq_rad <- Yq * (pi/180)
+  Zq_rad <- Zq * (pi/180)
+  
+  alpha <- atan(Yq_rad/Xq_rad) * (180/pi)
+  
+  if (Xq < 0) {
+    alpha <- alpha + 180
+  } else {
+    if (Yq < 0) {
+      alpha <- alpha + 360
+    }
+  }
+  
+  delta <- atan( (Zq_rad) / (sqrt(Xq_rad*Xq_rad + Yq_rad*Yq_rad))) * (180/pi)
+  
+  distance = sqrt( Xq^2 + Yq^2 + Zq^2)
+  
+  alpha <- alpha / 15
+  
+  vec <- c(alpha, delta, distance)
+  return(vec)
+}
+```
+
+## Get Alt/Az
+```{r}
+AltAz_Planet <- function(Planet, Lat, Long, Date) {
+  RADEC <- RA_DEC_Planet(Planet)
+  
+  RA <- RADEC[1] * 15
+  Dec <- RADEC[2]
+  
+  # Taken from https://gist.github.com/matshofman/4145718
+  # Day offset and Local Siderial Time
+  d0 <- as.POSIXct("2000-01-01 12:00:00", tz="UTC")
+
+  hour = hour(Date)
+  minute = minute(Date)
+  dayOffset <- as.numeric(difftime(Date, d0, units="days"))
+  
+  #LST <- mod((100.46 + 0.985647 * dayOffset + Long + 15 * (hour + minute / 60) + 360), 360)
+  LST <- (100.46 + 0.985647 * dayOffset + Long + 15 * (hour + minute / 60) + 360) %% 360
+  
+  # Hour Angle
+  #HA <- mod((LST - RA + 360), 360)
+  HA <- (LST - RA + 360) %% 360
+
+  # HA, DEC, Lat to Alt, AZ
+  x <- cos(HA * (pi/180)) * cos(Dec * (pi/180))
+  y <- sin(HA * (pi/180)) * cos(Dec * (pi/180))
+  z <- sin(Dec * (pi/180))
+
+  xhor <- x * cos((90 - Lat) * (pi/180)) - z * sin((90 - Lat) * (pi/180))
+  yhor <- y
+  zhor <- x * sin((90 - Lat) * (pi/180)) + z * cos((90 - Lat) * (pi/180))
+
+  az <- atan2(yhor, xhor) * (180/pi) + 180
+  alt <- asin(zhor) * (180/pi)
+
+  vec <- data.frame(Date, Planet, alt, az)
+  colnames(vec) = c("date","Planet","alt","az")
+  return(vec)
+}
+```
+
+```{r}
+#dpos <- as.POSIXct("2020-12-29 23:00:00", tz="UTC")
+dpos <- as.POSIXct("2020-12-22 23:25:00", tz="UTC")
+AltAz_Planet("Jupiter", locale_lat, locale_lon, dpos)
+AltAz_Planet("Saturn", locale_lat, locale_lon, dpos)
+
+```
+
+```{r}
+altaz <- rbind(
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-01 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-02 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-03 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-04 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-05 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-06 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-07 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-08 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-09 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-10 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-11 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-12 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-13 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-14 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-15 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-16 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-17 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-18 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-19 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-20 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-21 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-22 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-23 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-24 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-25 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-26 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-27 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-28 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-29 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-30 23:25:00", tz="UTC")),
+  AltAz_Planet("Jupiter", locale_lat, locale_lon, as.POSIXct("2020-12-31 23:25:00", tz="UTC")),
+  
+  
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-01 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-02 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-03 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-04 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-05 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-06 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-07 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-08 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-09 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-10 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-11 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-12 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-13 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-14 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-15 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-16 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-17 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-18 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-19 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-20 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-21 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-22 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-23 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-24 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-25 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-26 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-27 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-28 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-29 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-30 23:25:00", tz="UTC")),
+  AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-31 23:25:00", tz="UTC"))
+)
+
+altaz
+```
+
+```{r}
+fntltp <- JS("function(){
+  console.log(this);
+  return this.point.date + ' - ' + this.point.Planet + '<br>' + 'Azimuth: ' + this.point.x + '<br>' + 'Altitude: ' + this.point.y
+}")
+
+highchart() %>% 
+  hc_title(text = "Saturn and Jupiter December 2020") %>% 
+  hc_add_series(data = altaz, type = "scatter", hcaes(x = az, y = alt, group = Planet)) %>% 
+  hc_xAxis(
+    title = list(text = "Azimuth"),
+    opposite = FALSE
+    ) %>% 
+  hc_yAxis(
+    title = list(text = "Altitude"),
+    opposite = FALSE
+    ) %>% 
+  hc_tooltip(formatter = fntltp)
+```
+
+
