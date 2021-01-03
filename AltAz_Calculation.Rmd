@@ -72,13 +72,20 @@ d <- dpos - dele
 
 # Date of planetary constants "2000-01-01 12:00:00 UTC"
 dele <- as.POSIXct("2013-08-16 12:00:00", tz="UTC")
-
-#Date of observation
-# 2012-12-20 15:05:00
-dpos <- as.POSIXct("2020-12-20 23:00:00", tz="UTC")
-
-d <- as.numeric(difftime(dpos, dele, units="days"))
 ```
+
+## Get Date Difference From Ephemera
+```{r}
+DaysSinceEphemera <- function(dateObs) {
+  # Date of planetary constants "2000-01-01 12:00:00 UTC"
+  dele <- as.POSIXct("2013-08-16 12:00:00", origin = "1970-01-01", tz="UTC")
+
+  d <- as.numeric(difftime(dateObs, dele, units="days"))
+  
+  return(d)
+}
+```
+
 
 ## Get Planet Orbital Elements
 ```{r}
@@ -102,10 +109,10 @@ Planet_Eph <- function(planetName) {
         # M should be in range 0 to 360 degrees, add or subtract
         #   multiples of 360 to bring M into this range.
 
-MeanAnomaly_planet <- function(planetName) {
+MeanAnomaly_planet <- function(planetName, dayOffset) {
   PlanetEphData <- Planet_Eph(planetName)
   
-  x <- PlanetEphData$n_planet * d + PlanetEphData$L_planet - PlanetEphData$p_planet
+  x <- PlanetEphData$n_planet * dayOffset + PlanetEphData$L_planet - PlanetEphData$p_planet
   
   return(x)
 }
@@ -113,10 +120,10 @@ MeanAnomaly_planet <- function(planetName) {
 
 ## True Anomaly
 ```{r}
-TrueAnomaly_planet <- function(planetName) {
+TrueAnomaly_planet <- function(planetName, dayOffset) {
   PlanetEphData <- Planet_Eph(planetName)
   
-  MAp_Rad <- MeanAnomaly_planet(planetName) * (pi/180)
+  MAp_Rad <- MeanAnomaly_planet(planetName, dayOffset) * (pi/180)
   e <- PlanetEphData$e_planet
   
   x <- MAp_Rad + (2 * e - 0.25 * e^3 + 5/96 * e^5) * sin(MAp_Rad) +
@@ -130,12 +137,12 @@ TrueAnomaly_planet <- function(planetName) {
 
 ## Radius Vector
 ```{r}
-RadiusVector_planet <- function(planetName) {
+RadiusVector_planet <- function(planetName, dayOffset) {
   PlanetEphData <- Planet_Eph(planetName)
   
   a <- PlanetEphData$a_planet
   e <- PlanetEphData$e_planet
-  v <- TrueAnomaly_planet(planetName)
+  v <- TrueAnomaly_planet(planetName, dayOffset)
 
   x <- a * (1 - e^2) / (1 + e * cos(v))
   
@@ -145,14 +152,14 @@ RadiusVector_planet <- function(planetName) {
 
 ## Heliocentric coordinates of Planet
 ```{r}
-HelioCoords_planet <- function(planetName) {
+HelioCoords_planet <- function(planetName, dayOffset) {
   PlanetEphData <- Planet_Eph(planetName)
   
   i <- PlanetEphData$i_planet * (pi/180)
   o <- PlanetEphData$o_planet * (pi/180)
   p <- PlanetEphData$p_planet * (pi/180)
-  r <- RadiusVector_planet(planetName)
-  v <- TrueAnomaly_planet(planetName)
+  r <- RadiusVector_planet(planetName, dayOffset)
+  v <- TrueAnomaly_planet(planetName, dayOffset)
 
   Xp <- r * (cos(o) * cos(v + p - o) - sin(o) * sin(v + p - o) * cos(i))
   Yp <- r * (sin(o) * cos(v + p - o) + cos(o) * sin(v + p - o) * cos(i))
@@ -183,14 +190,14 @@ HelioCoords_Earth <- function() {
 
 ## Geocentric ecliptic coordinates of the planet
 ```{r}
-GeoEclipticCoords_Planet <- function(planetName) {
+GeoEclipticCoords_Planet <- function(planetName, dayOffset) {
   PlanetEphData <- Planet_Eph(planetName)
   
   i <- PlanetEphData$i_planet * (pi/180)
   o <- PlanetEphData$o_planet * (pi/180)
   p <- PlanetEphData$p_planet * (pi/180)
-  r <- RadiusVector_planet(planetName)
-  v <- TrueAnomaly_planet(planetName)
+  r <- RadiusVector_planet(planetName, dayOffset)
+  v <- TrueAnomaly_planet(planetName, dayOffset)
 
   Xp <- r * (cos(o) * cos(v + p - o) - sin(o) * sin(v + p - o) * cos(i))
   Yp <- r * (sin(o) * cos(v + p - o) + cos(o) * sin(v + p - o) * cos(i))
@@ -199,8 +206,8 @@ GeoEclipticCoords_Planet <- function(planetName) {
   PlanetEphDataEarth <- Planet_Eph("Earth")
 
   pe <- PlanetEphDataEarth$p_planet * (pi/180)
-  re <- RadiusVector_planet("Earth")
-  ve <- TrueAnomaly_planet("Earth")
+  re <- RadiusVector_planet("Earth", dayOffset)
+  ve <- TrueAnomaly_planet("Earth", dayOffset)
 
   Xe <- re * cos(ve + pe)
   Ye <- re * sin(ve + pe)
@@ -217,8 +224,8 @@ GeoEclipticCoords_Planet <- function(planetName) {
 
 ## Geocentric equatorial coordinates of the planet
 ```{r}
-GeoEquitorialCoords_Planet <- function(planetName) {
-  vecGeo <- GeoEclipticCoords_Planet(planetName)
+GeoEquitorialCoords_Planet <- function(planetName, dayOffset) {
+  vecGeo <- GeoEclipticCoords_Planet(planetName, dayOffset)
   
   Xq <- vecGeo[1]
   Yq <- vecGeo[2] * cos(ec_radians) - vecGeo[3] * sin(ec_radians)
@@ -231,8 +238,8 @@ GeoEquitorialCoords_Planet <- function(planetName) {
 
 ## Right Ascension and Declination
 ```{r}
-RA_DEC_Planet <- function(planetName) {
-  vecGeo <- GeoEquitorialCoords_Planet(planetName)
+RA_DEC_Planet <- function(planetName, dayOffset) {
+  vecGeo <- GeoEquitorialCoords_Planet(planetName, dayOffset)
   Xq <- vecGeo[1]
   Yq <- vecGeo[2]
   Zq <- vecGeo[3]
@@ -265,10 +272,6 @@ RA_DEC_Planet <- function(planetName) {
 ## Get Alt/Az
 ```{r}
 AltAz_Planet <- function(Planet, Lat, Long, Date) {
-  RADEC <- RA_DEC_Planet(Planet)
-  
-  RA <- RADEC[1] * 15
-  Dec <- RADEC[2]
   
   # Taken from https://gist.github.com/matshofman/4145718
   # Day offset and Local Siderial Time
@@ -277,6 +280,12 @@ AltAz_Planet <- function(Planet, Lat, Long, Date) {
   hour = hour(Date)
   minute = minute(Date)
   dayOffset <- as.numeric(difftime(Date, d0, units="days"))
+  
+  Days_SE <- DaysSinceEphemera(Date)
+  RADEC <- RA_DEC_Planet(Planet, Days_SE)
+  
+  RA <- RADEC[1] * 15
+  Dec <- RADEC[2]
   
   #LST <- mod((100.46 + 0.985647 * dayOffset + Long + 15 * (hour + minute / 60) + 360), 360)
   LST <- (100.46 + 0.985647 * dayOffset + Long + 15 * (hour + minute / 60) + 360) %% 360
@@ -304,10 +313,19 @@ AltAz_Planet <- function(Planet, Lat, Long, Date) {
 ```
 
 ```{r}
-#dpos <- as.POSIXct("2020-12-29 23:00:00", tz="UTC")
-dpos <- as.POSIXct("2020-12-22 23:25:00", tz="UTC")
+DaysSinceEphemera(as.POSIXct("2020-12-29 23:00:00", tz="UTC"))
+```
+
+```{r}
+dpos <- as.POSIXct("2020-12-29 23:00:00", tz="UTC")
 AltAz_Planet("Jupiter", locale_lat, locale_lon, dpos)
 AltAz_Planet("Saturn", locale_lat, locale_lon, dpos)
+```
+
+```{r}
+dayOffset <- DaysSinceEphemera(as.POSIXct("2020-12-29 23:00:00", tz="UTC"))
+MeanAnomaly_planet("Mars",dayOffset)
+RA_DEC_Planet("Mars",dayOffset)
 
 ```
 
@@ -378,8 +396,6 @@ altaz <- rbind(
   AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-30 23:25:00", tz="UTC")),
   AltAz_Planet("Saturn", locale_lat, locale_lon, as.POSIXct("2020-12-31 23:25:00", tz="UTC"))
 )
-
-altaz
 ```
 
 ```{r}
@@ -402,4 +418,42 @@ highchart() %>%
   hc_tooltip(formatter = fntltp)
 ```
 
+```{r}
+library(tidyverse)
+PlanetList <- Osculating_Elements_AUG_16_2013$name_planet
+PlanetList <- c("Mercury","Venus","Mars","Jupiter","Saturn")
+DayList <- seq(
+  from=as.POSIXct("2021-01-01", tz="UTC"),
+  to=as.POSIXct("2021-12-31", tz="UTC"),
+  by="days"
+  )
+DistanceDF <- data.frame(Date=double(0), Planet=character(0), Distance=double(0))
+
+for(d in DayList) {
+  dayoffset <- DaysSinceEphemera(as.POSIXct(d, origin="1970-01-01 00:00"))
+  for(i in PlanetList){
+    #print(RA_DEC_Planet(i, dayoffset)[3])
+    z <- cbind.data.frame(Date = as.POSIXct(d, origin="1970-01-01 00:00"), Planet = i, Distance = RA_DEC_Planet(i, dayoffset)[3])
+    DistanceDF <- rbind(DistanceDF, z)
+    
+    #DistanceDF %>% add_row(Date = d, Planet = i, Distance = RA_DEC_Planet(i, dayoffset)[3])
+  }
+}
+```
+
+```{r}
+highchart() %>% 
+  hc_title(text = "Planetary Distances 2020") %>% 
+  hc_add_series(data = DistanceDF, type = "spline", hcaes(x = as.Date(Date), y = Distance, group = Planet)) %>% 
+  hc_xAxis(
+    title = list(text = "Date"),
+    type = "datetime",
+    opposite = FALSE
+    ) %>% 
+  hc_yAxis(
+    title = list(text = "Distance (AU)"),
+    opposite = FALSE
+    ) %>% 
+  hc_tooltip(shared = TRUE)
+```
 
