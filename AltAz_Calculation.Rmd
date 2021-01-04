@@ -14,11 +14,11 @@ source("AltAz_Methods.R")
 
 
 # Planet elements
-Osculating_Elements_AUG_16_2013 <- read_excel("Osculating_Elements_AUG_16_2013.xlsx")
+Osculating_Elements_AUG_16_2013 <- read.csv("Osculating_Elements_AUG_16_2013.csv")
 #View(Osculating_Elements_AUG_16_2013)
 
 
-# location
+# Set Your Location
 locale_lon <- -82.695457
 locale_lat <- 28.364189
 
