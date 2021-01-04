@@ -173,10 +173,10 @@ highchart() %>%
 
 ```{r include=TRUE, warning=FALSE}
 PlanetList <- Osculating_Elements_AUG_16_2013$name_planet
-PlanetList <- c("Mercury","Venus","Mars","Jupiter","Saturn")
+PlanetList <- c("Mercury","Venus","Mars")
 DayList <- seq(
-  from=as.POSIXct("2021-01-01", tz="UTC"),
-  to=as.POSIXct("2021-12-31", tz="UTC"),
+  from=as.POSIXct("2018-01-01", tz="UTC"),
+  to=as.POSIXct("2027-12-31", tz="UTC"),
   by="days"
   )
 DistanceDF <- data.frame(Date=double(0), Planet=character(0), Distance=double(0))
@@ -191,13 +191,14 @@ for(d in DayList) {
     #DistanceDF %>% add_row(Date = d, Planet = i, Distance = RA_DEC_Planet(i, dayoffset)[3])
   }
 }
+```
 
-highchart() %>% 
+```{r include=TRUE, warning=FALSE}
+highchart(type = "stock") %>% 
   hc_title(text = "Planetary Distances 2020") %>% 
   hc_add_series(data = DistanceDF, type = "spline", hcaes(x = as.Date(Date), y = Distance, group = Planet)) %>% 
   hc_xAxis(
     title = list(text = "Date"),
-    type = "datetime",
     opposite = FALSE
     ) %>% 
   hc_yAxis(
