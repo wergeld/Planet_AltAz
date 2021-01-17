@@ -19,8 +19,8 @@ Osculating_Elements_AUG_16_2013 <- read.csv("Osculating_Elements_AUG_16_2013.csv
 
 
 # Set Your Location
-locale_lon <- -82.695457
-locale_lat <- 28.364189
+locale_lon <- XXXXXX
+locale_lat <- XXXXXX
 
 
 # Equinox and mean ecliptic of J2000.0
